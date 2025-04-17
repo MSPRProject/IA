@@ -1,8 +1,9 @@
 import pandas as pd
+import torch
 import os
 import re
 from transformers import T5ForConditionalGeneration, T5Tokenizer
-import torch
+from chatbot.bdd import lire_pays
 
 class ChatbotModel:
     def __init__(self, model_name='google/flan-t5-base', device=None):
@@ -15,6 +16,24 @@ class ChatbotModel:
 
         self.df = self.load_csv("chatbot/data_mspr.csv")
         self.previous_countries = []
+        self.countries_data = self.load_countries_from_db()
+
+    def load_countries_from_db(self):
+        countries = lire_pays() 
+        country_list = [country[1] for country in countries] 
+        return country_list
+
+    def extract_country_data(self, prompt):
+        if not self.countries_data:
+            return {}
+
+        prompt_lower = prompt.lower()
+        for country in self.countries_data:
+            if country.lower() in prompt_lower:
+                return {
+                    "country": country
+                }
+        return {}
 
     def load_csv(self, path):
         if not os.path.exists(path):

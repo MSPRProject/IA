@@ -42,7 +42,7 @@ def chat():
             'success': True,
             'response': 'Voici le graphique demandé.',
             'chart': response.get("data", {}),
-            'chart_type': response.get("chart_type", "bar"),
+            'chart_type': response.get("chart_type", "<bar"),
         })
 
     return jsonify({'success': True, 'response': response})
