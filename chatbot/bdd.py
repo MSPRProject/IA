@@ -5,7 +5,7 @@ def get_connection():
     return psycopg2.connect(
         dbname="mspr_api", 
         user="postgres", 
-        password="mspr_passworde",
+        password="mspr_password",
         host="localhost", 
         port="5432" 
     )
@@ -13,9 +13,8 @@ def get_connection():
 def lire_pays():
     connection = get_connection()
     cursor = connection.cursor()
-    
     try:
-        query = "SELECT * FROM Country;"
+        query = "SELECT country_id, name, continent, iso3, population FROM Country;"
         cursor.execute(query)
         countries = cursor.fetchall() 
         return countries
@@ -25,13 +24,11 @@ def lire_pays():
         cursor.close()
         connection.close()
 
-# Fonction pour lire les pandémies
 def lire_pandemies():
     connection = get_connection()
     cursor = connection.cursor()
-    
     try:
-        query = "SELECT * FROM Pandemic;"
+        query = "SELECT pandemic_id, name, pathogen, description, start_date, end_date, notes FROM Pandemic;"
         cursor.execute(query)
         pandemics = cursor.fetchall() 
         return pandemics
@@ -44,7 +41,6 @@ def lire_pandemies():
 def lire_infections():
     connection = get_connection()
     cursor = connection.cursor()
-    
     try:
         query = """
         SELECT i.infection_id, c.name AS country_name, p.name AS pandemic_name, i.total_cases, i.total_deaths
@@ -64,7 +60,6 @@ def lire_infections():
 def lire_rapports():
     connection = get_connection()
     cursor = connection.cursor()
-    
     try:
         query = """
         SELECT r.report_id, i.country_id, i.pandemic_id, r.date, r.new_cases, r.new_deaths
@@ -79,24 +74,3 @@ def lire_rapports():
     finally:
         cursor.close()
         connection.close()
-
-# if __name__ == "__main__":
-#     print("Pays :")
-#     countries = lire_pays()
-#     for country in countries:
-#         print(country)
-
-#     print("\nPandémies :")
-#     pandemics = lire_pandemies()
-#     for pandemic in pandemics:
-#         print(pandemic)
-
-#     print("\nInfections :")
-#     infections = lire_infections()
-#     for infection in infections:
-#         print(infection)
-
-#     print("\nRapports :")
-#     reports = lire_rapports()
-#     for report in reports:
-#         print(report)

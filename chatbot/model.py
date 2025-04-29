@@ -3,14 +3,12 @@ import torch
 import os
 import re
 from transformers import T5ForConditionalGeneration, T5Tokenizer
-from chatbot.bdd import lire_pays
+from chatbot.bdd import lire_pays  # Nous utilisons lire_pays() pour charger les pays depuis la BDD
 
 class ChatbotModel:
-    def __init__(self, model_name='google/flan-t5-base', device=None):
+    def __init__(self, model_name='', device=None):
         self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name)
-        self.model.eval()
-
+        self.model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') if device is None else device
         self.model.to(self.device)
 
@@ -19,8 +17,8 @@ class ChatbotModel:
         self.countries_data = self.load_countries_from_db()
 
     def load_countries_from_db(self):
-        countries = lire_pays() 
-        country_list = [country[1] for country in countries] 
+        countries = lire_pays()
+        country_list = [{"country_id": c[0], "name": c[1], "continent": c[2], "iso3": c[3], "population": c[4]} for c in countries]
         return country_list
 
     def extract_country_data(self, prompt):
@@ -29,10 +27,8 @@ class ChatbotModel:
 
         prompt_lower = prompt.lower()
         for country in self.countries_data:
-            if country.lower() in prompt_lower:
-                return {
-                    "country": country
-                }
+            if country["name"].lower() in prompt_lower:
+                return country
         return {}
 
     def load_csv(self, path):
@@ -57,7 +53,7 @@ class ChatbotModel:
         if country_data.empty:
             return None
         return country_data.iloc[0].to_dict()
-
+    
     def get_chart_parameters(self, prompt):
         if self.df is None:
             return {}
@@ -66,7 +62,7 @@ class ChatbotModel:
 
         if any(word in prompt_lower for word in ["évolution", "temps", "courbe", "evolution", "time", "curve", "linear"]):
             chart_type = "line"
-        elif any(word in prompt_lower for word in ["camembert", "pie", "camembert", "pie"]):
+        elif any(word in prompt_lower for word in ["camembert", "pie"]):
             chart_type = "pie"
         elif any(word in prompt_lower for word in ["radar"]):
             chart_type = "radar"
@@ -77,9 +73,14 @@ class ChatbotModel:
         else:
             chart_type = "bar" 
 
-        countries = []
+        countries = set()
         if "Country/Region" in self.df.columns:
-            countries = [c for c in self.df["Country/Region"].dropna().unique() if c.lower() in prompt_lower]
+            for c in self.df["Country/Region"].dropna().unique():
+                if c.lower() in prompt_lower:
+                    countries.add(c)
+        
+        if not countries:
+            print(f"Aucun pays trouvé dans le prompt : {prompt}")
 
         metrics = [col for col in self.df.columns if col.lower() in prompt_lower and col.lower() not in ["country/region", "date"]]
         if not metrics:
@@ -87,7 +88,7 @@ class ChatbotModel:
 
         return {
             "chart_type": chart_type,
-            "countries": countries,
+            "countries": list(countries),
             "metrics": metrics,
             "time_series": chart_type == "line"
         }
@@ -123,7 +124,6 @@ class ChatbotModel:
                         "borderColor": "rgba(75,192,192,1)",
                         "tension": 0.1
                     })
-
         elif chart_type == "pie":
             for metric in metrics:
                 values = []
@@ -140,11 +140,10 @@ class ChatbotModel:
                 chart_data["datasets"].append({
                     "label": metric,
                     "data": values,
-                    "backgroundColor": ['#FF5733', '#33FF57', '#3357FF', '#FF33A1', '#FF5733'],
+                    "backgroundColor": ['#33FF57', '#3357FF', '#FF33A1'],
                     "hoverOffset": 4
                 })
-            chart_data["labels"] = countries
-
+            chart_data["labels"] = list(countries)
         elif chart_type == "radar":
             for metric in metrics:
                 values = []
@@ -166,10 +165,9 @@ class ChatbotModel:
                     "pointBackgroundColor": 'rgba(255, 99, 132, 1)',
                     "pointBorderColor": '#fff'
                 })
-            chart_data["labels"] = countries
-
+            chart_data["labels"] = list(countries)
         elif chart_type == "horizontal_bar":
-            chart_data["labels"] = countries
+            chart_data["labels"] = list(countries)
             for metric in metrics:
                 values = []
                 for country in countries:
@@ -186,9 +184,8 @@ class ChatbotModel:
                     "label": metric,
                     "data": values
                 })
-
         else:
-            chart_data["labels"] = countries
+            chart_data["labels"] = list(countries)
             for metric in metrics:
                 values = []
                 for country in countries:
@@ -212,26 +209,6 @@ class ChatbotModel:
             "data": chart_data
         }
 
-    def extract_country_data(self, prompt):
-        if self.df is None or "Country/Region" not in self.df.columns:
-            return {}
-
-        prompt_lower = prompt.lower()
-        for country in self.df["Country/Region"].dropna().unique():
-            if country.lower() in prompt_lower:
-                row = self.df[self.df["Country/Region"].str.lower() == country.lower()].iloc[0]
-                return {
-                    "country": country,
-                    "deaths": row.get("Deaths", 0),
-                    "recovered": row.get("Recovered", 0),
-                    "confirmed": row.get("Confirmed", 0),
-                    "active": row.get("Active", 0),
-                    "new_cases": row.get("New cases", 0),
-                    "new_deaths": row.get("New deaths", 0),
-                    "population": row.get("Population", 0)
-                }
-        return {}
-
     def math_verified(self, prompt):
         return bool(re.fullmatch(r'^[\d\s+\-*/().]+$', prompt))
 
@@ -240,7 +217,7 @@ class ChatbotModel:
                     "chart", "visualiser", "graph", "curve", "diagram", "display", "show", "evolution", "comparison", "visualize", "pie", "radar"]
         return any(word in prompt.lower() for word in keywords)
 
-    def generate_response(self, prompt, max_length=100, temperature=0.7, top_k=50, top_p=0.95, do_sample=True, num_return_sequences=1):
+    def generate_response(self, prompt, max_length=100, temperature=0.5, top_k=50, top_p=0.95, do_sample=True, num_return_sequences=1):
         if self.math_verified(prompt):
             try:
                 return str(eval(prompt))
@@ -270,7 +247,8 @@ class ChatbotModel:
 
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
 
+
 if __name__ == "__main__":
-    chatbot = ChatbotModel()
+    chatbot = ChatbotModel(model_name="google/flan-t5-base")
     prompt = input("Pose une question : ")
     print(chatbot.generate_response(prompt))

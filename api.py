@@ -27,26 +27,28 @@ def chat():
     do_sample = data.get('do_sample', False)
     num_return_sequences = data.get('num_return_sequences', 1)
 
-    response = chatbot.generate_response(
-        prompt,
-        max_length=max_length,
-        temperature=temperature,
-        top_k=top_k,
-        top_p=top_p,
-        do_sample=do_sample,
-        num_return_sequences=num_return_sequences
-    )
+    try:
+        response = chatbot.generate_response(
+            prompt,
+            max_length=max_length,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            do_sample=do_sample,
+            num_return_sequences=num_return_sequences
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
     if isinstance(response, dict) and response.get("action") == "chart":
         return jsonify({
             'success': True,
             'response': 'Voici le graphique demandé.',
             'chart': response.get("data", {}),
-            'chart_type': response.get("chart_type", "<bar"),
+            'chart_type': response.get("chart_type", "bar"),
         })
 
     return jsonify({'success': True, 'response': response})
-
 
 if __name__ == '__main__':
     api.run(debug=True, host='0.0.0.0', port=5000)
