@@ -1,18 +1,17 @@
-from random_forest_service import RandomForestService
+from tree.random_forest_service import RandomForestService
+from tree.get_data import get_all_countries, get_all_pandemics, get_all_infections, get_all_reports
+from tree.data_sorting import DataSorting
 
 if __name__ == "__main__":
-    try:
-        rfs = RandomForestService()
-        accuracy = rfs.train_model_once()
-        print(f"Précision du modèle : {accuracy}")
+    
+    countries = get_all_countries()
+    pandemics = get_all_pandemics()
+    infections = get_all_infections()
+    reports = get_all_reports()
 
-        prediction = rfs.predict({
-            "total_cases": 100000,
-            "total_deaths": 3000,
-            "population": 50000000,
-            "year": 2020
-        })
-        print("Prediction:", prediction)
+    df = DataSorting.format_and_sort_data(countries, pandemics, infections, reports)
+    
+    model = RandomForestService()
+    accuracy = model.train_model_once()
+    print(f"Précision du modèle : {accuracy}")
 
-    except ValueError as e:
-        print(f"Erreur: {e}")

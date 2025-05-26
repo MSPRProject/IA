@@ -1,4 +1,6 @@
-chatbot/__pycache__/
+chatbot/*.pyc
+fastapi/*.pyc
+tree/*.pyc
 front.html
 mspr_api.db
 .env

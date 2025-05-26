@@ -4,22 +4,82 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
-import json
+from tree.data_sorting import DataSorting 
 import joblib
 import requests
+import json
+from tqdm import tqdm
+from tree.get_data import get_all_countries, get_all_pandemics, get_all_infections, get_all_reports
+
+def get_all_entities(url, embedded_key):
+    params = {"page": 0, "size": 20}
+    response = requests.get(url, params=params)
+    data = response.json()
+    embedded = data.get("_embedded", {})
+    entities = embedded.get(embedded_key, [])
+    page_info = data.get("page", {})
+    total_pages = page_info.get("totalPages", 1)
+
+    for page in tqdm(range(1, total_pages), desc=f"Récupération de {embedded_key}"):
+        params["page"] = page
+        response = requests.get(url, params=params)
+        data = response.json()
+        embedded = data.get("_embedded", {})
+        page_entities = embedded.get(embedded_key, [])
+        entities.extend(page_entities)
+
+    print(f"Nombre total de {embedded_key} récupérés : {len(entities)}")
+    return entities
 
 def get_training_data():
     url = "http://localhost:8080/api/ai/trainingData"
-    body = { "page": 0, "size": 1000, "sort": "date" }
+    body = {"page": 0, "size": 1000, "sort": "date"}
+    all_data = []
     
-    data = []
-    for i in range(1, 100):
+    response = requests.get(url, json=body)
+    if response.status_code != 200:
+        print(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
+        return None
+    
+    data = response.json()
+    content = data.get("content", [])
+    
+    if not content:
+        print("Aucune donnée retournée.")
+        return None
+    
+    all_data.extend(content)
+    page_count = data.get("totalPages", 0)
+    if page_count == 0:
+        print("Aucune page de données disponible.")
+        return None
+
+    for i in tqdm(range(1, page_count)):
+        body["page"] = i
         response = requests.get(url, json=body)
-        if response.status_code == 200:
-            data = response.json()
-            return data
-        else:
+
+        if response.status_code != 200:
+            print(f"Erreur HTTP {response.status_code} lors de l'appel à {url} pour la page {i}")
             break
+
+        data = response.json()
+        content = data.get("content", [])
+        if not content:
+            print(f"Aucune donnée retournée pour la page {i}. Arrêt.")
+            break
+        
+        all_data.extend(content)
+
+    if not all_data:
+        print("Aucune donnée n'a été récupérée.")
+        return None
+    
+    print("Données brutes récupérées (extrait) :")
+    for i, item in enumerate(all_data[:5]):
+        print(f"Item {i} : {json.dumps(item, indent=2, ensure_ascii=False)}")
+
+    print(f"Nombre total d'éléments récupérés : {len(all_data)}")
+    return {"content": all_data}
 
 class RandomForestService:
     def __init__(self):
@@ -27,7 +87,7 @@ class RandomForestService:
         self.accuracy = None
         self.scaler = None
         self.is_trained = False
-        
+
     @staticmethod
     def load():
         try:
@@ -41,40 +101,27 @@ class RandomForestService:
         if self.is_trained:
             return self.accuracy
 
-        data = get_training_data()
-                
-        if data is None:
-            raise ValueError("Impossible de récupérer les données via l'API FastAPI.")
+        print("Récupération des données paginées...")
+        countries = get_all_countries()
+        pandemics = get_all_pandemics()
+        infections = get_all_infections()
+        reports = get_all_reports()
 
-        if not isinstance(data, dict):
-            try:
-                print
-                data = json.loads(data)
-            except json.JSONDecodeError:
-                raise ValueError("Les données reçues ne sont pas au format JSON valide.")
+        print("Formatage des données...")
+        df = DataSorting.format_and_sort_data(countries, pandemics, infections, reports)
 
-        required_keys = ["reports", "infections", "pandemics", "countries"]
-        missing_keys = [key for key in required_keys if key not in data]
-        if missing_keys:
-            raise ValueError(f"Les données sont manquantes pour les clés : {', '.join(missing_keys)}")
+        if df.empty:
+            raise ValueError("Les données formatées sont vides. Impossible d'entraîner le modèle.")
 
-        df = self._format_data(data)
+        print("Données formatées et triées :")
+        print(df.head())
 
-        df["report_date"] = pd.to_datetime(df["report_date"], errors='coerce')
+        print(f"Nombre de lignes avant suppression des doublons : {len(df)}")
+        df = df.drop_duplicates()
+        print(f"Nombre de lignes après suppression des doublons : {len(df)}")
+
         df["year"] = df["report_date"].dt.year
-
-        df["population"] = pd.to_numeric(df["population"], errors="coerce")
-        df["total_cases"] = pd.to_numeric(df["total_cases"], errors="coerce")
-        df["total_deaths"] = pd.to_numeric(df["total_deaths"], errors="coerce")
-
-        df.dropna(subset=["total_cases", "total_deaths", "population", "year", "pandemic_name"], inplace=True)
-
-        if len(df) < 2:
-            raise ValueError("Pas assez de données après nettoyage pour entraîner le modèle.")
-
-        print("Valeurs manquantes par colonne :\n", df.isnull().sum())
-
-        X = df[["total_cases", "total_deaths", "population", "year"]]
+        X = df[["new_cases", "new_deaths", "year"]]
         y = df["pandemic_name"]
 
         self.scaler = StandardScaler()
@@ -97,60 +144,54 @@ class RandomForestService:
         joblib.dump(self.model, "random_forest_model.pkl")
         joblib.dump(self.scaler, "scaler.pkl")
 
+        print(f"Modèle entraîné avec une précision de {self.accuracy:.2f}")
         return self.accuracy
-
-    def predict(self, data: dict):
-        if not self.is_trained:
-            raise ValueError("Le modèle n'a pas encore été entraîné.")
-
-        required_keys = ["total_cases", "total_deaths", "population", "year"]
-        missing_keys = [key for key in required_keys if key not in data]
-        if missing_keys:
-            raise ValueError(f"Données manquantes : {', '.join(missing_keys)}")
-
-        df = pd.DataFrame([data])
-        df = df[["total_cases", "total_deaths", "population", "year"]]
-
-        df_scaled = self.scaler.transform(df)
-
-        return self.model.predict(df_scaled)[0]
-
+    
     def _format_data(self, data: dict) -> pd.DataFrame:
         reports = data.get("reports", [])
-        infections = {i.get("id"): i for i in data.get("infections", [])}
-        pandemics = {p.get("id"): p for p in data.get("pandemics", [])}
-        countries = {c.get("id"): c for c in data.get("countries", [])}
-
+        infections = {i.get("country_iso3"): i for i in data.get("infections", []) if i.get("country_iso3")}
+        pandemics = {p.get("name"): p for p in data.get("pandemics", []) if p.get("name")}
+        countries = {c.get("iso3"): c for c in data.get("countries", []) if c.get("iso3")}
+    
         print("Nombre de reports :", len(reports))
         print("Nombre d'infections :", len(infections))
         print("Nombre de pandémies :", len(pandemics))
         print("Nombre de pays :", len(countries))
-
+        
+    
         rows = []
         for report in reports:
-            infection = infections.get(report.get("infection_id"))
+            country_iso3 = report.get("country_iso3")
+            if not country_iso3:
+                # print(f"Report ignoré : pas de 'country_iso3' dans {report}")
+                continue
+    
+            infection = infections.get(country_iso3)
             if not infection:
-                print(f"Infection manquante pour le report ID {report.get('id')}")
+                print(f"Infection manquante pour le pays {country_iso3}")
                 continue
-            country = countries.get(infection.get("country_id"))
+    
+            country = countries.get(country_iso3)
             if not country:
-                print(f"Pays manquant pour l'infection ID {infection.get('id')}")
+                print(f"Pays manquant pour le code {country_iso3}")
                 continue
-            pandemic = pandemics.get(infection.get("pandemic_id"))
+    
+            pandemic = pandemics.get(infection.get("pandemic_name"))
             if not pandemic:
-                print(f"Pandémie manquante pour l'infection ID {infection.get('id')}")
+                print(f"Pandémie manquante pour {infection.get('pandemic_name')}")
                 continue
-
+    
             rows.append({
                 "report_date": report.get("date"),
-                "total_cases": infection.get("total_cases", 0),
-                "total_deaths": infection.get("total_deaths", 0),
+                "total_cases": infection.get("new_cases", 0),
+                "total_deaths": infection.get("new_deaths", 0),
                 "population": country.get("population", 0),
                 "pandemic_name": pandemic.get("name", "Unknown")
             })
-
+    
         if not rows:
             print("Aucune ligne valide n'a été créée.")
             raise ValueError("Aucune ligne de données formatées valides.")
 
         return pd.DataFrame(rows)
+    
