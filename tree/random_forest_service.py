@@ -4,125 +4,141 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
-from tree.data_sorting import DataSorting 
 import joblib
 import requests
 import json
 from tqdm import tqdm
 from tree.get_data import get_all_countries, get_all_pandemics, get_all_infections, get_all_reports
+from services.api_service import ApiService
 
-def get_all_entities(url, embedded_key):
-    params = {"page": 0, "size": 20}
-    response = requests.get(url, params=params)
-    data = response.json()
-    embedded = data.get("_embedded", {})
-    entities = embedded.get(embedded_key, [])
-    page_info = data.get("page", {})
-    total_pages = page_info.get("totalPages", 1)
+INPUT_COLUMNS = (
+    ["pandemic_name", "pandemic_pathogen", "country_iso3", "continent"]
+    + list(f"report{i}_date" for i in range(100))
+    + list(f"report{i}_new_cases" for i in range(100))
+    + list(f"report{i}_new_deaths" for i in range(100))
+)
 
-    for page in tqdm(range(1, total_pages), desc=f"Récupération de {embedded_key}"):
-        params["page"] = page
-        response = requests.get(url, params=params)
-        data = response.json()
-        embedded = data.get("_embedded", {})
-        page_entities = embedded.get(embedded_key, [])
-        entities.extend(page_entities)
-
-    print(f"Nombre total de {embedded_key} récupérés : {len(entities)}")
-    return entities
-
-def get_training_data():
-    url = "http://localhost:8080/api/ai/trainingData"
-    body = {"page": 0, "size": 1000, "sort": "date"}
-    all_data = []
-    
-    response = requests.get(url, json=body)
-    if response.status_code != 200:
-        print(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
-        return None
-    
-    data = response.json()
-    content = data.get("content", [])
-    
-    if not content:
-        print("Aucune donnée retournée.")
-        return None
-    
-    all_data.extend(content)
-    page_count = data.get("totalPages", 0)
-    if page_count == 0:
-        print("Aucune page de données disponible.")
-        return None
-
-    for i in tqdm(range(1, page_count)):
-        body["page"] = i
-        response = requests.get(url, json=body)
-
-        if response.status_code != 200:
-            print(f"Erreur HTTP {response.status_code} lors de l'appel à {url} pour la page {i}")
-            break
-
-        data = response.json()
-        content = data.get("content", [])
-        if not content:
-            print(f"Aucune donnée retournée pour la page {i}. Arrêt.")
-            break
-        
-        all_data.extend(content)
-
-    if not all_data:
-        print("Aucune donnée n'a été récupérée.")
-        return None
-    
-    print("Données brutes récupérées (extrait) :")
-    for i, item in enumerate(all_data[:5]):
-        print(f"Item {i} : {json.dumps(item, indent=2, ensure_ascii=False)}")
-
-    print(f"Nombre total d'éléments récupérés : {len(all_data)}")
-    return {"content": all_data}
+OUTPUT_COLUMNS = ["target_date", "target_new_cases", "target_new_deaths"]
 
 class RandomForestService:
-    def __init__(self):
-        self.model = None
+    def __init__(self, model = None, scaler = None):
+        self.model = model
         self.accuracy = None
-        self.scaler = None
-        self.is_trained = False
+        self.scaler = scaler
+        self.is_trained = model != None and scaler != None
+
 
     @staticmethod
-    def load():
+    def format_predict_data(data: dict):
+        # data schema:
+        # {
+        #     reports: [{
+        #         date: date,
+        #         new_cases: int,
+        #         new_deaths: int,
+        #     }; 100],
+        #     pandemic_name: str,
+        #     pandemic_pathogen: str,
+        #     pandemic_duration: int (in days),
+        #     country_iso3: str,
+        #     continent
+        # }
+        result = pd.DataFrame()
+
+        row = pd.Series()
+        row["pandemic_name"] = data["pandemic_name"]
+        row["pandemic_pathogen"] = data["pandemic_pathogen"]
+        row["country_iso3"] = data["country_iso3"]
+        row["continent"] = data["continent"]
+
+        for i in range(100):
+            if len(data["reports"]) >= i:
+                report = data["reports"][i]
+            else:
+                report = {"date": None, "new_cases": None, "new_deaths": None}
+
+            row[f"report{i}_date"] = report["date"]
+            row[f"report{i}_new_cases"] = report["new_cases"]
+            row[f"report{i}_new_deaths"] = report["new_deaths"]
+
+        return pd.concat([result, row])
+
+    @staticmethod
+    def format_training_data(data: [dict]):
+        # data schema:
+        # {
+        #     reports: [{
+        #         date: date,
+        #         new_cases: int,
+        #         new_deaths: int,
+        #     }; 100],
+        #     pandemic_name: str,
+        #     pandemic_pathogen: str,
+        #     pandemic_duration: int (in days),
+        #     target: {
+        #         date: date,
+        #         new_cases: int,
+        #         new_deaths: int,
+        #     },
+        #     location: str,
+        # }
+        result = pd.DataFrame()
+
+        def format_one_data(d: dict):
+            row = {}
+            row["pandemic_name"] = d["pandemic_name"]
+            row["pandemic_pathogen"] = d["pandemic_pathogen"]
+            row["country_iso3"] = d["country_iso3"]
+            row["continent"] = d["continent"]
+
+            for i in range(100):
+                if len(d["reports"]) > i:
+                    report = d["reports"][i]
+                else:
+                    report = {"date": None, "new_cases": None, "new_deaths": None}
+
+                row[f"report{i}_date"] = report["date"]
+                row[f"report{i}_new_cases"] = report["new_cases"]
+                row[f"report{i}_new_deaths"] = report["new_deaths"]
+
+            row["target_date"] = d["target"]["date"]
+            row["target_new_cases"] = d["target"]["new_cases"]
+            row["target_new_deaths"] = d["target"]["new_deaths"]
+
+            return row
+
+        return pd.DataFrame(joblib.Parallel(n_jobs=16)(joblib.delayed(format_one_data)(d) for d in tqdm(data)))
+
+    @staticmethod
+    def load(base: str):
         try:
-            model = joblib.load("random_forest_model.pkl")
-            scaler = joblib.load("scaler.pkl")
-            return model, scaler
+            model = joblib.load(base + "random_forest_model.pkl")
+            scaler = joblib.load(base + "scaler.pkl")
+            return RandomForestService(model, scaler)
         except FileNotFoundError:
             raise ValueError("Le modèle ou le scaler n'a pas été trouvé. Veuillez entraîner le modèle d'abord.")
 
-    def train_model_once(self):
+    def train_model_once(self, api_service: ApiService):
         if self.is_trained:
             return self.accuracy
 
-        print("Récupération des données paginées...")
-        countries = get_all_countries()
-        pandemics = get_all_pandemics()
-        infections = get_all_infections()
-        reports = get_all_reports()
+        training_data = api_service.get_training_data()
 
         print("Formatage des données...")
-        df = DataSorting.format_and_sort_data(countries, pandemics, infections, reports)
+        df = RandomForestService.format_training_data(training_data)
 
         if df.empty:
             raise ValueError("Les données formatées sont vides. Impossible d'entraîner le modèle.")
 
-        print("Données formatées et triées :")
+        print("Données formatées:")
         print(df.head())
 
         print(f"Nombre de lignes avant suppression des doublons : {len(df)}")
         df = df.drop_duplicates()
         print(f"Nombre de lignes après suppression des doublons : {len(df)}")
 
-        df["year"] = df["report_date"].dt.year
-        X = df[["new_cases", "new_deaths", "year"]]
-        y = df["pandemic_name"]
+        X = df[INPUT_COLUMNS]
+        y = df[OUTPUT_COLUMNS]
 
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X)
@@ -146,52 +162,12 @@ class RandomForestService:
 
         print(f"Modèle entraîné avec une précision de {self.accuracy:.2f}")
         return self.accuracy
-    
-    def _format_data(self, data: dict) -> pd.DataFrame:
-        reports = data.get("reports", [])
-        infections = {i.get("country_iso3"): i for i in data.get("infections", []) if i.get("country_iso3")}
-        pandemics = {p.get("name"): p for p in data.get("pandemics", []) if p.get("name")}
-        countries = {c.get("iso3"): c for c in data.get("countries", []) if c.get("iso3")}
-    
-        print("Nombre de reports :", len(reports))
-        print("Nombre d'infections :", len(infections))
-        print("Nombre de pandémies :", len(pandemics))
-        print("Nombre de pays :", len(countries))
-        
-    
-        rows = []
-        for report in reports:
-            country_iso3 = report.get("country_iso3")
-            if not country_iso3:
-                # print(f"Report ignoré : pas de 'country_iso3' dans {report}")
-                continue
-    
-            infection = infections.get(country_iso3)
-            if not infection:
-                print(f"Infection manquante pour le pays {country_iso3}")
-                continue
-    
-            country = countries.get(country_iso3)
-            if not country:
-                print(f"Pays manquant pour le code {country_iso3}")
-                continue
-    
-            pandemic = pandemics.get(infection.get("pandemic_name"))
-            if not pandemic:
-                print(f"Pandémie manquante pour {infection.get('pandemic_name')}")
-                continue
-    
-            rows.append({
-                "report_date": report.get("date"),
-                "total_cases": infection.get("new_cases", 0),
-                "total_deaths": infection.get("new_deaths", 0),
-                "population": country.get("population", 0),
-                "pandemic_name": pandemic.get("name", "Unknown")
-            })
-    
-        if not rows:
-            print("Aucune ligne valide n'a été créée.")
-            raise ValueError("Aucune ligne de données formatées valides.")
 
-        return pd.DataFrame(rows)
-    
+    def predict(self, predict_data: dict):
+        formatted = RandomForestService.format_predict_data(predict_data)
+        print("Prediction data: {formatted}")
+
+        X_scaled = scaler.transform(X)
+        prediction = model.predict(X_scaled)
+        return prediction[0]
+

@@ -29,11 +29,6 @@ headers = {
 if BEARER_TOKEN is None or BEARER_TOKEN == "":
     raise ValueError("Bearer token is not set in the .env file.")
 
-@app.get("/prompt")
-def get_data(body: dict):
-    print(body)
-    return {"received": body}
-
 @app.get("/")
 def root():
     return {"message": "API is running"}
