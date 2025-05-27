@@ -47,4 +47,10 @@ class DataSorting:
         print("Pays uniques :", df["country_iso3"].unique())
         print("Pandémies uniques :", df["pandemic_name"].unique())
         print("Dates de rapport min/max :", df["report_date"].min(), df["report_date"].max())
+        
+        print("Dates uniques dans le DataFrame :", df["report_date"].unique())
+        print("Nombre de dates différentes :", len(df["report_date"].unique()))
+        print("Nombre de lignes :", len(df))
+        print(df.head(20))
+        print(df.tail(20))
         return df
