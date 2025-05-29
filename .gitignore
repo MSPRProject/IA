@@ -6,4 +6,3 @@ mspr_api.db
 .env
 **/__pycache__
 venv/
-model/

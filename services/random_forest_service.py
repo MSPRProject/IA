@@ -38,7 +38,7 @@ class RandomForestService:
         row["continent"] = data["continent"]
 
         for i in range(100):
-            if len(data["reports"]) >= i:
+            if len(data["reports"]) > i:
                 report = data["reports"][i]
             else:
                 report = {"date": None, "new_cases": None, "new_deaths": None}
@@ -61,7 +61,7 @@ class RandomForestService:
             row["continent"] = d["continent"]
 
             for i in range(100):
-                if len(d["reports"]) >= i:
+                if len(d["reports"]) > i:
                     report = d["reports"][i]
                 else:
                     report = {"date": None, "new_cases": None, "new_deaths": None}
