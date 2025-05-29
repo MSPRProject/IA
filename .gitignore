@@ -5,4 +5,5 @@ front.html
 mspr_api.db
 .env
 **/__pycache__
-venv
+venv/
+model/

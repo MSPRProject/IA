@@ -11,7 +11,7 @@ class ApiService:
         body = {"page": 0, "size": 1000, "sort": "date"}
         all_data = []
         
-        response = requests.get(url, json=body)
+        response = requests.get(url, params=body)
         if response.status_code != 200:
             raise ValueError(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
         
@@ -26,7 +26,7 @@ class ApiService:
 
         for i in tqdm(range(1, page_count)):
             body["page"] = i
-            response = requests.get(url, json=body)
+            response = requests.get(url, params=body)
 
             if response.status_code != 200:
                 raise ValueError(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
