@@ -21,8 +21,7 @@ def train_model():
 
     model = RandomForestService()
     api_service = ApiService(API_BASE_URL)
-    accuracy = model.train_model(api_service, "model")
-    print(f"Précision du modèle : {accuracy}")
+    model.train_model(api_service, "model")
     exit(0)
 
 def serve():

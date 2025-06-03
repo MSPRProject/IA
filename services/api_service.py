@@ -1,6 +1,5 @@
 import requests
 from tqdm import tqdm
-import json
 
 class ApiService:
     def __init__(self, base_url: str):
@@ -10,17 +9,17 @@ class ApiService:
         url = f"{self.base_url}/api/ai/trainingData"
         body = {"page": 0, "size": 1000, "sort": "date"}
         all_data = []
-        
+
         response = requests.get(url, params=body)
         if response.status_code != 200:
-            raise ValueError(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
-        
+            raise ValueError(f"[ApiService] Unexpected HTTP status while fetching {url}: {response.status_code}")
+
         data = response.json()
         content = data.get("content", [])
-        
+
         if not content:
-            raise EOFError("Aucune donnée retournée par l'API")
-        
+            raise ValueError("[ApiService] No content found in the response from the API.")
+
         all_data.extend(content)
         page_count = data.get("totalPages", 0)
 
@@ -29,18 +28,14 @@ class ApiService:
             response = requests.get(url, params=body)
 
             if response.status_code != 200:
-                raise ValueError(f"Erreur HTTP {response.status_code} lors de l'appel à {url}")
+                raise ValueError(f"[ApiService] Unexpected HTTP status while fetching {url}: {response.status_code}")
 
             data = response.json()
             content = data.get("content", [])
             if not content:
                 break
-            
+
             all_data.extend(content)
 
-        print("Données brutes récupérées (extrait) :")
-        for i, item in enumerate(all_data[:5]):
-            print(f"Item {i} : {json.dumps(item, indent=2, ensure_ascii=False)}")
-
-        print(f"Nombre total d'éléments récupérés : {len(all_data)}")
+        print(f"[ApiService] Fetched {len(all_data)} training data entries from the API.")
         return all_data
