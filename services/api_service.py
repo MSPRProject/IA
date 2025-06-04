@@ -12,13 +12,13 @@ class ApiService:
 
         response = requests.get(url, params=body)
         if response.status_code != 200:
-            raise ValueError(f"[ApiService] Unexpected HTTP status while fetching {url}: {response.status_code}")
+            raise ValueError(f"[ApiService] get_training_data - ERROR: Unexpected HTTP status while fetching {url}: {response.status_code}")
 
         data = response.json()
         content = data.get("content", [])
 
         if not content:
-            raise ValueError("[ApiService] No content found in the response from the API.")
+            raise ValueError("[ApiService] get_training_data - ERROR: No content found in the response from the API.")
 
         all_data.extend(content)
         page_count = data.get("totalPages", 0)
@@ -28,7 +28,7 @@ class ApiService:
             response = requests.get(url, params=body)
 
             if response.status_code != 200:
-                raise ValueError(f"[ApiService] Unexpected HTTP status while fetching {url}: {response.status_code}")
+                raise ValueError(f"[ApiService] get_training_data - ERROR: Unexpected HTTP status while fetching {url}: {response.status_code}")
 
             data = response.json()
             content = data.get("content", [])
@@ -37,5 +37,5 @@ class ApiService:
 
             all_data.extend(content)
 
-        print(f"[ApiService] Fetched {len(all_data)} training data entries from the API.")
+        print(f"[ApiService] get_training_data - INFO: Fetched {len(all_data)} training data entries from the API.")
         return all_data

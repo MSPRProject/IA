@@ -14,6 +14,8 @@ import joblib
 import json
 import random
 
+RANDOM_STATE = 637
+
 INPUT_COLUMNS = (
     ["pandemic_name", "pandemic_pathogen", "country_iso3", "continent", "target_date"]
     + list(f"report{i}_date" for i in range(100))
@@ -96,18 +98,18 @@ class RandomForestService:
             scaler = joblib.load(scaler_file)
             return RandomForestService(model, scaler)
         except FileNotFoundError:
-            raise ValueError("[RandomForestService] Model or scaler file not found. Please train the model first.")
+            raise ValueError("[RandomForestService] load - ERROR: Model or scaler file not found. Please train the model first.")
 
-    def _prepare_training_data(self, df: pd.DataFrame):
+    def _prepare_training_data(self, df: pd.DataFrame, random_state: int):
         df = df.copy()
 
         df.dropna(subset=OUTPUT_COLUMNS, inplace=True)
-        print(f"[RandomForestService] Row count after null/NaN cleaning: {len(df)}")
+        print(f"[RandomForestService] _prepare_training_data - INFO: Row count after null/NaN cleaning: {len(df)}")
         if df.empty:
-            raise ValueError("[RandomForestService] Unable to train model: formatted data is empty.")
+            raise ValueError("[RandomForestService] _prepare_training_data - ERROR: Unable to train model: formatted data is empty.")
 
         df = df.drop_duplicates().reset_index(drop=True)
-        print(f"[RandomForestService] Row count after deleting duplicated: {len(df)}")
+        print(f"[RandomForestService] _prepare_training_data - INFO: Row count after deleting duplicated: {len(df)}")
 
         categorical_features = ["pandemic_name", "pandemic_pathogen", "country_iso3", "continent"]
         date_features = [f"report{i}_date" for i in range(100)] + ["target_date"]
@@ -133,9 +135,9 @@ class RandomForestService:
         num_rows_dropped = num_rows_before_report_drop - len(df)
 
         if num_rows_dropped > 0:
-            print(f"[RandomForestService] Deleted {num_rows_dropped} rows with no/empty reports.")
+            print(f"[RandomForestService] _prepare_training_data - INFO: Deleted {num_rows_dropped} rows with no/empty reports.")
             if df.empty:
-                raise ValueError("[RandomForestService] Unable to train model: formatted data is empty.")
+                raise ValueError("[RandomForestService] _prepare_training_data - ERROR: Unable to train model: formatted data is empty.")
 
         X = df[list(INPUT_COLUMNS)]
         y = df[OUTPUT_COLUMNS]
@@ -162,21 +164,21 @@ class RandomForestService:
         if len(df) <= 1:
             X_train, y_train = X, y
             X_test, y_test = X, y
-            print("[RandomForestService] Warning: Dataset has <= 1 sample. Evaluating on training data.")
+            print("[RandomForestService] _prepare_training_data - WARNING: Dataset has <= 1 sample. Evaluating on training data.")
         elif len(df) < 10:
             X_train, y_train = X, y
             X_test, y_test = X, y
-            print(f"[RandomForestService] Warning: Small dataset ({len(df)} samples). Evaluating on training data.")
+            print(f"[RandomForestService] _prepare_training_data - WARNING: Small dataset ({len(df)} samples). Evaluating on training data.")
         else:
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_state)
 
-        print(f"[RandomForestService] Training set size: {X_train.shape[0]}, Test set size: {X_test.shape[0]}")
+        print(f"[RandomForestService] _prepare_training_data - INFO: Training set size: {X_train.shape[0]}, Test set size: {X_test.shape[0]}")
 
         X_train_processed = self.scaler.fit_transform(X_train)
         X_test_processed = self.scaler.transform(X_test)
 
         if X_train_processed.shape[0] == 0:
-            raise ValueError("[RandomForestService] Training data empty after preprocessing.")
+            raise ValueError("[RandomForestService] _prepare_training_data - ERROR: Training data empty after preprocessing.")
 
         return X_train, X_test, X_train_processed, y_train, X_test_processed, y_test
 
@@ -184,21 +186,21 @@ class RandomForestService:
         if self.is_trained:
             return self.accuracy
 
+        random_state = random.randint(0, 1000) if RANDOM_STATE is None else RANDOM_STATE
+
         # Data fetching and processing
         training_data = api_service.get_training_data()
         df = RandomForestService.format_training_data(training_data)
 
-        X_train, X_test, X_train_processed, y_train, X_test_processed, y_test = self._prepare_training_data(df)
+        X_train, X_test, X_train_processed, y_train, X_test_processed, y_test = self._prepare_training_data(df, random_state)
 
         if df.empty:
-            raise ValueError("[RandomForestService] Unable to train model: formatted data is empty.")
+            raise ValueError("[RandomForestService] train_model - ERROR: Unable to train model: formatted data is empty.")
 
-        print(f"[RandomForestService] Initial formatted data: {len(df)} rows.")
+        print(f"[RandomForestService] train_model - INFO: Initial formatted data: {len(df)} rows.")
 
         # Train the Random Forest model
-        random_state = random.randint(0, 1000)
-
-        print(f"[RandomForestService] Random state for model training: {random_state}")
+        print(f"[RandomForestService] train_model - INFO: Random state for model training: {random_state}")
         parameters_range = {
             "n_estimators": randint(50, 100),
             "max_depth": randint(5, 15),
@@ -208,12 +210,12 @@ class RandomForestService:
         hpo_sample_fraction = 0.5
         min_samples_for_hpo = 100
         if (X_train_processed.shape[0] * hpo_sample_fraction) < min_samples_for_hpo and X_train_processed.shape[0] > min_samples_for_hpo:
-            print(f"[RandomForestService] HPO sample fraction too small, using min_samples_for_hpo: {min_samples_for_hpo}")
+            print(f"[RandomForestService] train_model - WARNING: HPO sample fraction too small, using min_samples_for_hpo: {min_samples_for_hpo}")
             hpo_sample_fraction = min_samples_for_hpo / X_train_processed.shape[0]
 
 
         if X_train_processed.shape[0] <= min_samples_for_hpo:
-            print("[RandomForestService] Dataset too small for HPO subsampling, using full training data for HPO.")
+            print("[RandomForestService] train_model - WARNING: Dataset too small for HPO subsampling, using full training data for HPO.")
             X_hpo, y_hpo = X_train_processed, y_train
         else:
             X_hpo, _, y_hpo, _ = train_test_split(
@@ -222,7 +224,7 @@ class RandomForestService:
                 train_size=hpo_sample_fraction,
                 random_state=random_state,
             )
-        print(f"[RandomForestService] Using {X_hpo.shape[0]} samples for HPO.")
+        print(f"[RandomForestService] train_model - INFO: Using {X_hpo.shape[0]} samples for HPO.")
 
         regressor_model = RandomForestRegressor(random_state=random_state, n_jobs=-1)
         optimization_model = RandomizedSearchCV(
@@ -236,21 +238,21 @@ class RandomForestService:
             random_state=random_state
         )
 
-        print("[RandomForestService] Starting HPO on subset of training data...")
+        print("[RandomForestService] train_model - INFO: Starting HPO on subset of training data...")
         optimization_model.fit(X_hpo, y_hpo)
 
-        print("[RandomForestService] HPO complete. Training best model on full training data...")
+        print("[RandomForestService] train_model - INFO: HPO complete. Training best model on full training data...")
         self.model = optimization_model.best_estimator_
         self.model.fit(X_train_processed, y_train)
 
         # Model evaluation
         score = -np.inf
         if X_test_processed.shape[0] > 0:
-            print("[RandomForestService] Predicting test data...")
+            print("[RandomForestService] train_model - INFO: Predicting test data...")
             y_pred = self.model.predict(X_test_processed)
 
             score = r2_score(y_test, y_pred)
-            print(f"[RandomForestService] Model trained with a R2 of {score:.4f}")
+            print(f"[RandomForestService] train_model - INFO: Model trained with a R2 of {score:.4f}")
 
             y_test_cases = y_test['target_new_cases']
             y_pred_cases = y_pred[:, 0]
@@ -268,10 +270,10 @@ class RandomForestService:
             print(f"[RandomForestService] | Mean new deaths: {y_test_deaths.mean():.2f}")
 
         else:
-            print("Test set was empty, no evaluation performed on test data.")
+            print("[RandomForestService] train_model - WARNING: Test set was empty, no evaluation performed on test data.")
 
         if X_train.equals(X_test) and X_train_processed.shape[0] > 0:
-            print("Evaluation score reflects performance on the training data.")
+            print("[RandomForestService] train_model - WARNING: Evaluation score reflects performance on the training data.")
 
         self.accuracy = score
         self.is_trained = True
@@ -289,14 +291,15 @@ class RandomForestService:
 
     def predict(self, predict_data: dict):
         formatted = RandomForestService.format_predict_data(predict_data)
-        print(f"Prediction data: {formatted}")
+        print(f"[RandomForestService] predict - INFO: Prediction data: {formatted}")
 
         X_scaled = self.scaler.transform(formatted)
-        prediction_transformed = self.model.predict(X_scaled)
-        print(f"Log-transformed prediction: {prediction_transformed}")
+        prediction = self.model.predict(X_scaled)
 
-        predicted_cases_original = np.maximum(0, np.expm1(prediction_transformed[0][0]))
-        predicted_deaths_original = np.maximum(0, np.expm1(prediction_transformed[0][1]))
+        predicted_cases_original = prediction[0][0]
+        predicted_deaths_original = prediction[0][1]
+
+        print(f"[RandomForestService] predict - INFO: Predicted new cases: {predicted_cases_original}, new deaths: {predicted_deaths_original}")
 
         return json.dumps({
             "new_cases": predicted_cases_original,
