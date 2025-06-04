@@ -32,6 +32,8 @@ python . serve
 
 ## Endpoints de l'API
 
+Une documentation OpenAPI est disponible à l'adresse `/docs` après le lancement de l'API.
+
 ### GET `/`
 
 Headers:
