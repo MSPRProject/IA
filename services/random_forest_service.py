@@ -16,9 +16,9 @@ import json
 import random
 
 class Report(BaseModel):
-    date: str | None
-    new_cases: int | None
-    new_deaths: int | None
+    date: int | None
+    new_cases: int | None = None
+    new_deaths: int | None = None
 
 class PredictData(BaseModel):
     pandemic_name: str
@@ -303,7 +303,7 @@ class RandomForestService:
 
         return self.accuracy
 
-    def predict(self, predict_data: PredictData):
+    def predict(self, predict_data: PredictData) -> dict:
         formatted = RandomForestService.format_predict_data(predict_data)
         print(f"[RandomForestService] predict - INFO: Prediction data: {formatted}")
 
@@ -315,7 +315,7 @@ class RandomForestService:
 
         print(f"[RandomForestService] predict - INFO: Predicted new cases: {predicted_cases_original}, new deaths: {predicted_deaths_original}")
 
-        return json.dumps({
+        return {
             "new_cases": predicted_cases_original,
             "new_deaths": predicted_deaths_original
-        })
+        }

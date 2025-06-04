@@ -68,7 +68,7 @@ def serve():
         except Exception as e:
             print(f"Erreur lors de la prédiction : {e}")
             return JSONResponse({"error": str(e)}, status_code=500, media_type="application/json")
-    uvicorn.run(app, port=5000, log_level="info")
+    uvicorn.run(app, port=8081, log_level="info")
 
 if len(sys.argv) != 2:
     print_usage()
