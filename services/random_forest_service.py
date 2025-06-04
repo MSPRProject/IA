@@ -8,11 +8,25 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from scipy.stats import randint
 from tqdm import tqdm
+from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import joblib
 import json
 import random
+
+class Report(BaseModel):
+    date: str | None
+    new_cases: int | None
+    new_deaths: int | None
+
+class PredictData(BaseModel):
+    pandemic_name: str
+    pandemic_pathogen: str
+    country_iso3: str
+    continent: str
+    reports: list[Report]
+    target: Report
 
 RANDOM_STATE = 637
 
@@ -34,49 +48,49 @@ class RandomForestService:
 
 
     @staticmethod
-    def format_predict_data(data: dict):
+    def format_predict_data(data: PredictData):
         row = {}
-        row["pandemic_name"] = data["pandemic_name"]
-        row["pandemic_pathogen"] = data["pandemic_pathogen"]
-        row["country_iso3"] = data["country_iso3"]
-        row["continent"] = data["continent"]
+        row["pandemic_name"] = data.pandemic_name
+        row["pandemic_pathogen"] = data.pandemic_pathogen
+        row["country_iso3"] = data.country_iso3
+        row["continent"] = data.continent
 
         for i in range(100):
-            if len(data["reports"]) > i:
-                report = data["reports"][i]
+            if len(data.reports) > i:
+                report = data.reports[i]
             else:
-                report = {"date": None, "new_cases": None, "new_deaths": None}
+                report = Report(date=None, new_cases=None, new_deaths=None)
 
-            row[f"report{i}_date"] = report["date"]
-            row[f"report{i}_new_cases"] = report["new_cases"] if report["new_cases"] is not None and report["new_cases"] > 0 else 0
-            row[f"report{i}_new_deaths"] = report["new_deaths"] if report["new_deaths"] is not None and report["new_deaths"] > 0 else 0
+            row[f"report{i}_date"] = report.date
+            row[f"report{i}_new_cases"] = report.new_cases if report.new_cases is not None and report.new_cases > 0 else 0
+            row[f"report{i}_new_deaths"] = report.new_deaths if report.new_deaths is not None and report.new_deaths > 0 else 0
 
-        row["target_date"] = data["target"]["date"]
+        row["target_date"] = data.target.date
 
         return pd.DataFrame([row])
 
     @staticmethod
-    def format_training_data(data: [dict]):
-        def format_one_data(d: dict):
+    def format_training_data(data: list[PredictData]):
+        def format_one_data(d: PredictData):
             row = {}
-            row["pandemic_name"] = d["pandemic_name"]
-            row["pandemic_pathogen"] = d["pandemic_pathogen"]
-            row["country_iso3"] = d["country_iso3"]
-            row["continent"] = d["continent"]
+            row["pandemic_name"] = d.pandemic_name
+            row["pandemic_pathogen"] = d.pandemic_pathogen
+            row["country_iso3"] = d.country_iso3
+            row["continent"] = d.continent
 
             for i in range(100):
-                if len(d["reports"]) > i:
-                    report = d["reports"][i]
+                if len(d.reports) > i:
+                    report = d.reports[i]
                 else:
-                    report = {"date": None, "new_cases": None, "new_deaths": None}
+                    report = Report(date=None, new_cases=None, new_deaths=None)
 
-                row[f"report{i}_date"] = report["date"]
-                row[f"report{i}_new_cases"] = report["new_cases"] if report["new_cases"] is not None and report["new_cases"] > 0 else 0
-                row[f"report{i}_new_deaths"] = report["new_deaths"] if report["new_deaths"] is not None and report["new_deaths"] > 0 else 0
+                row[f"report{i}_date"] = report.date
+                row[f"report{i}_new_cases"] = report.new_cases if report.new_cases is not None and report.new_cases > 0 else 0
+                row[f"report{i}_new_deaths"] = report.new_deaths if report.new_deaths is not None and report.new_deaths > 0 else 0
 
-            row["target_date"] = d["target"]["date"]
-            row["target_new_cases"] = d["target"]["new_cases"] if d["target"]["new_cases"] is not None and d["target"]["new_cases"] > 0 else 0
-            row["target_new_deaths"] = d["target"]["new_deaths"] if d["target"]["new_deaths"] is not None and d["target"]["new_deaths"] > 0 else 0
+            row["target_date"] = d.target.date
+            row["target_new_cases"] = d.target.new_cases if d.target.new_cases is not None and d.target.new_cases > 0 else 0
+            row["target_new_deaths"] = d.target.new_deaths if d.target.new_deaths is not None and d.target.new_deaths > 0 else 0
 
             return row
 
@@ -289,7 +303,7 @@ class RandomForestService:
 
         return self.accuracy
 
-    def predict(self, predict_data: dict):
+    def predict(self, predict_data: PredictData):
         formatted = RandomForestService.format_predict_data(predict_data)
         print(f"[RandomForestService] predict - INFO: Prediction data: {formatted}")
 

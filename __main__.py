@@ -1,11 +1,13 @@
 from typing import Annotated
 from fastapi import FastAPI, Header
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 from dotenv import dotenv_values, load_dotenv
 from services.random_forest_service import RandomForestService
 import uvicorn
 import sys
 from services.api_service import ApiService
+from services.random_forest_service import PredictData
+from services.random_forest_service import Report
 
 load_dotenv()
 config = dotenv_values(".env")
@@ -40,23 +42,32 @@ def serve():
 
     @app.get("/")
     def health_check(authorization: Annotated[str, Header()]):
+        """
+        Health check endpoint to verify if the service is running.
+        Returns a 200 OK response if the service is healthy.
+        """
         if authorization != f"Bearer {BEARER_TOKEN}":
-            return Response("Unauthorized", status_code=401)
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
-        return Response("Ok", status_code=200)
+        return JSONResponse({"status":"ok"}, status_code=200)
 
-    @app.post("/predict")
-    def predict(body: dict, authorization: Annotated[str, Header()]):
+    @app.post("/predict", response_model=Report)
+    def predict(body: PredictData, authorization: Annotated[str, Header()]):
+        """
+        Endpoint to make predictions using the trained model.
+        Expects a JSON body with the input data for prediction.
+        Returns the prediction result as a JSON response.
+        """
         if authorization != f"Bearer {BEARER_TOKEN}":
-            return Response("Unauthorized", status_code=401)
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
 
         try:
             prediction = model.predict(body)
             print(f"Prédiction générée : {prediction}")
-            return Response(prediction, status_code=200, media_type="application/json")
+            return JSONResponse(prediction, status_code=200, media_type="application/json")
         except Exception as e:
             print(f"Erreur lors de la prédiction : {e}")
-            return Response({"error": str(e)}, status_code=500, media_type="application/json")
+            return JSONResponse({"error": str(e)}, status_code=500, media_type="application/json")
     uvicorn.run(app, port=5000, log_level="info")
 
 if len(sys.argv) != 2:
