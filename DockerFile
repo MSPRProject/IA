@@ -1,0 +1,9 @@
+FROM python:3.10-slim-bookworm
+WORKDIR /app
+RUN apt-get update && apt-get upgrade -y && apt-get dist-upgrade -y && apt-get autoremove -y && apt-get clean
+COPY . .
+RUN pip install --no-cache-dir -r requirements.txt
+EXPOSE 8000
+ENTRYPOINT [ "python", "."]
+CMD ["serve"]
+# CMD ["train"]
