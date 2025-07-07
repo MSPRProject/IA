@@ -71,27 +71,41 @@ class RandomForestService:
 
     @staticmethod
     def format_training_data(data: list[PredictData]):
-        def format_one_data(d: PredictData):
-            row = {}
-            row["pandemic_name"] = d.pandemic_name
-            row["pandemic_pathogen"] = d.pandemic_pathogen
-            row["country_iso3"] = d.country_iso3
-            row["continent"] = d.continent
+        def get_report_or_default(reports: list[Report], index: int) -> Report:
+            if index < len(reports):
+                return reports[index]
+            return Report(date=None, new_cases=None, new_deaths=None)
+
+        def normalize_value(value):
+            return value if value is not None and value > 0 else 0
+
+        def format_report_fields(report: Report, index: int) -> dict:
+            return {
+                f"report{index}_date": report.date,
+                f"report{index}_new_cases": normalize_value(report.new_cases),
+                f"report{index}_new_deaths": normalize_value(report.new_deaths),
+            }
+
+        def format_target_fields(target: Report) -> dict:
+            return {
+                "target_date": target.date,
+                "target_new_cases": normalize_value(target.new_cases),
+                "target_new_deaths": normalize_value(target.new_deaths),
+            }
+
+        def format_one_data(d: PredictData) -> dict:
+            row = {
+                "pandemic_name": d.pandemic_name,
+                "pandemic_pathogen": d.pandemic_pathogen,
+                "country_iso3": d.country_iso3,
+                "continent": d.continent,
+            }
 
             for i in range(100):
-                if len(d.reports) > i:
-                    report = d.reports[i]
-                else:
-                    report = Report(date=None, new_cases=None, new_deaths=None)
+                report = get_report_or_default(d.reports, i)
+                row.update(format_report_fields(report, i))
 
-                row[f"report{i}_date"] = report.date
-                row[f"report{i}_new_cases"] = report.new_cases if report.new_cases is not None and report.new_cases > 0 else 0
-                row[f"report{i}_new_deaths"] = report.new_deaths if report.new_deaths is not None and report.new_deaths > 0 else 0
-
-            row["target_date"] = d.target.date
-            row["target_new_cases"] = d.target.new_cases if d.target.new_cases is not None and d.target.new_cases > 0 else 0
-            row["target_new_deaths"] = d.target.new_deaths if d.target.new_deaths is not None and d.target.new_deaths > 0 else 0
-
+            row.update(format_target_fields(d.target))
             return row
 
         formatted_rows = joblib.Parallel(n_jobs=-1)(
