@@ -8,25 +8,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from scipy.stats import randint
 from tqdm import tqdm
-from pydantic import BaseModel
 import pandas as pd
 import numpy as np
 import joblib
 import json
 import random
-
-class Report(BaseModel):
-    date: int | None
-    new_cases: int | None = None
-    new_deaths: int | None = None
-
-class PredictData(BaseModel):
-    pandemic_name: str
-    pandemic_pathogen: str
-    country_iso3: str
-    continent: str
-    reports: list[Report]
-    target: Report
+from services.api_service import PredictData, Report
 
 RANDOM_STATE = 637
 
